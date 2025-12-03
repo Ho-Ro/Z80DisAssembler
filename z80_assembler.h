@@ -53,7 +53,7 @@ extern uint32_t maxPC;
 extern bool listing;
 extern int verboseMode;
 extern bool reachedEnd;
-extern void checkPC( uint32_t pc );
+extern void checkPC( uint32_t pc, bool setMem=true );
 
 extern RecalcListP LastRecalc; // to patch the type for incomplete formulas
 

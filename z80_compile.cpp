@@ -3,6 +3,7 @@
  ***/
 
 #include "z80_assembler.h"
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -872,7 +873,7 @@ void DoPseudo( CommandP *cp ) {
     MSG( 2, "DoPseudo( %d, %X )\n", ( *cp )->typ, ( *cp )->val );
     CommandP c = *cp;
     CommandP cptr;
-    uint16_t iPC = PC;
+    uint32_t iPC = PC;
 
     switch ( c++->val ) { // all pseudo opcodes
     case DEFB:
@@ -892,6 +893,7 @@ void DoPseudo( CommandP *cp ) {
             } else {
                 char *sp;
                 sp = (char *)c++->val;             // value = ptr to the string
+                checkPC( iPC );                    // set minPC
                 checkPC( iPC + strlen( sp ) - 1 ); // will it overflow?
                 while ( *sp )
                     RAM[ iPC++ ] = *sp++; // transfer the string
@@ -901,7 +903,8 @@ void DoPseudo( CommandP *cp ) {
     case DEFS: {
         cptr = c;
         uint16_t size = CalcTerm( &cptr ); // get the amount
-        checkPC( iPC + size - 1 ); // guard against overflow
+        checkPC( iPC, false );                    // check minPC
+        checkPC( iPC + size - 1, false );         // guard against overflow
         iPC += size; // advance the PC
         c = cptr;
         if ( LastRecalc )
@@ -923,7 +926,8 @@ void DoPseudo( CommandP *cp ) {
                 Error( "symbol not defined" );
         } else
             fill = 0;
-        checkPC( iPC + size - 1 );
+        checkPC( iPC );            // check minPC
+        checkPC( iPC + size - 1 ); // guard against overflow
         while ( size-- )
             RAM[ iPC++ ] = fill;
         break;
@@ -940,6 +944,7 @@ void DoPseudo( CommandP *cp ) {
                 LastRecalc->typ = 1; // add two bytes
                 LastRecalc->adr = iPC;
             }
+            checkPC( iPC );     // check minPC
             checkPC( iPC + 1 ); // will it overflow?
             RAM[ iPC++ ] = val;
             RAM[ iPC++ ] = val >> 8;

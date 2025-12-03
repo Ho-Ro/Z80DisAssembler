@@ -23,6 +23,7 @@ bool listing = false;
 
 static FILE *lstfile;
 static FILE *outhex;
+static char *oneLine;
 
 int verboseMode = 0;
 
@@ -78,7 +79,6 @@ int main( int argc, char **argv ) {
     FILE *outbin;
     FILE *outC;
 
-    char *oneLine;
     int i, j;
 
     bool bin = false;
@@ -202,7 +202,10 @@ int main( int argc, char **argv ) {
         oneLine = fgets( LineBuf, sizeof( LineBuf ), infile ); // read a single line
         if ( !oneLine )
             break;                                // end of the code => exit
-        *( oneLine + strlen( oneLine ) - 1 ) = 0; // remove end of line marker
+        for ( char *p = oneLine + strlen( oneLine ) - 1;
+            *p == '\r' || *p == '\n'; *p-- = 0 ); // remove end of line marker
+        if ( verboseMode > 1 )
+            fprintf( stderr, "%s\n", oneLine );
         TokenizeLine( oneLine );                  // tokenize line
         CompileLine();                            // generate machine code for the line
         if ( lstfile )                            // create listing if enabled
@@ -320,16 +323,22 @@ int main( int argc, char **argv ) {
 }
 
 
-void checkPC( uint32_t pc ) {
-    MSG( 3, "checkPC( %04X )", pc );
+void checkPC( uint32_t pc, bool setMem ) {
+    MSG( 3, "checkPC( %08X < %08X ), %d", pc, minPC, setMem );
     if ( pc >= RAMSIZE ) {
+        if ( lstfile ) {
+            list( "\nERROR: Address overflow\n" );
+            list( "%05X                   %s\n", pc, oneLine );
+            fclose( lstfile );
+        }
         Error( "Address overflow -> exit" );
-        exit( 0 );
     }
-    if ( pc < minPC )
-        minPC = pc;
-    if ( pc > maxPC )
-        maxPC = pc;
+    if ( setMem ) { // update the range of initialised memory
+        if ( pc < minPC )
+            minPC = pc;
+        if ( pc > maxPC )
+            maxPC = pc;
+    }
     MSG( 3, "[%04X..%04X]\n", minPC, maxPC );
 }
 
@@ -360,22 +369,22 @@ void list( const char *format, ... ) {
 // address    data bytes    source code
 // break long data block (e.g. defm) into (not more than 8) lines of 4 data bytes
 static void listOneLine( uint32_t firstPC, uint32_t lastPC, const char *oneLine ) {
-    uint16_t codeLen = lastPC - firstPC;
     int textLen = strlen( oneLine );
-    if ( 0 == codeLen ) { // no bytes, just comment, blank lines, etc.
+    uint32_t codeLen = lastPC - firstPC;
+    if ( 0 == codeLen ) // no bytes, just comment, blank lines, etc.
         if ( textLen ) // indent text
             list( "%*s\n", 24 + textLen, oneLine );
         else // no cmd text, just newline
             list( "\n" );
-    } else { // opcode, blocks, strings
-        const uint16_t rows = 8;
-        uint16_t adr = firstPC;
+    else { // opcode, blocks, strings
+        const uint32_t rows = 8;
+        uint32_t adr = firstPC;
         // adr of last opcode byte
-        uint16_t endOp = lastPC < firstPC + 4 ? lastPC - 1 : firstPC + 3;
-        uint16_t lastRow = (codeLen - 1) / 4;
-        while ( adr < lastPC ) {
-            int row = ( adr - firstPC ) / 4;
-            int col = ( adr - firstPC ) % 4;
+        uint32_t endOp = lastPC < firstPC + 4 ? lastPC - 1 : firstPC + 3;
+        uint32_t lastRow = (codeLen - 1) / 4;
+        while ( adr < lastPC && adr <RAMSIZE ) {
+            uint32_t row = ( adr - firstPC ) / 4;
+            uint32_t col = ( adr - firstPC ) % 4;
             // list first n lines and last two lines (skip middle part of long blocks)
             if ( row < (lastRow < rows ? rows - 2  : rows - 3 ) || row > lastRow - 2 ) {
                 if ( col == 0 ) // addr of opcode(s)
